@@ -2,241 +2,280 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Sistema Clientes</title>
-
-    <!-- Bootstrap 5 -->
+    <title>Sistema de Inventario Real-Time</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.1/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
 </head>
 <body class="bg-light">
 
-<div class="container mt-5">
-
-    <!-- LOGIN -->
+<div class="container mt-4">
     <div id="loginDiv" class="row justify-content-center">
         <div class="col-md-4">
             <div class="card shadow">
-                <div class="card-header text-center bg-primary text-white">
-                    <h4>Iniciar Sesión</h4>
-                </div>
+                <div class="card-header text-center bg-primary text-white"><h4>📦 Inventario Login</h4></div>
                 <div class="card-body">
-
                     <input type="text" id="user" class="form-control mb-3" placeholder="Usuario">
                     <input type="password" id="pass" class="form-control mb-3" placeholder="Contraseña">
-
                     <button class="btn btn-primary w-100" onclick="login()">Ingresar</button>
-
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- APP -->
     <div id="app" style="display:none;">
-
-        <h3 class="mb-4">Mantenimiento de Clientes</h3>
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h3>Gestión de Inventario (BODEGA)</h3>
+            <div>
+                <button class="btn btn-primary btn-sm" onclick="abrirModalProducto()">+ Nuevo Producto</button>
+                <button class="btn btn-outline-danger btn-sm" onclick="location.reload()">Salir</button>
+            </div>
+        </div>
 
         <div class="row">
-
-            <!-- FORM -->
-            <div class="col-md-4">
-                <div class="card shadow">
-                    <div class="card-header bg-success text-white">
-                        <h5>Cliente</h5>
-                    </div>
-                    <div class="card-body">
-
-                        <input type="hidden" id="codiClie">
-
-                        <input type="text" id="ndni" class="form-control mb-2" placeholder="DNI">
-                        <input type="text" id="appa" class="form-control mb-2" placeholder="Apellido Paterno">
-                        <input type="text" id="apma" class="form-control mb-2" placeholder="Apellido Materno">
-                        <input type="text" id="nomb" class="form-control mb-2" placeholder="Nombre">
-                        <input type="date" id="fecha" class="form-control mb-3">
-
-                        <button class="btn btn-success w-100" onclick="guardarCliente()">Guardar</button>
-
-                    </div>
-                </div>
-            </div>
-
-            <!-- TABLA -->
             <div class="col-md-8">
                 <div class="card shadow">
-                    <div class="card-header bg-dark text-white">
-                        <h5>Lista de Clientes</h5>
+                    <div class="card-header bg-dark text-white d-flex justify-content-between">
+                        <span>Productos y Saldos</span>
                     </div>
                     <div class="card-body">
-
-                        <table class="table table-bordered table-hover">
+                        <table class="table table-hover">
                             <thead class="table-dark">
-                                <tr>
-                                    <th>ID</th>
-                                    <th>DNI</th>
-                                    <th>Nombre</th>
-                                    <th>Acciones</th>
-                                </tr>
+                            <tr>
+                                <th>ID</th>
+                                <th>Nombre</th>
+                                <th>Precio</th>
+                                <th>Stock</th>
+                                <th>Acciones</th>
+                            </tr>
                             </thead>
-                            <tbody id="tablaClientes"></tbody>
+                            <tbody id="tablaProductos"></tbody>
                         </table>
-
                     </div>
                 </div>
             </div>
 
+            <div class="col-md-4">
+                <div class="card shadow">
+                    <div class="card-header bg-success text-white"><h5>Registrar Movimiento</h5></div>
+                    <div class="card-body">
+                        <input type="number" id="movProdId" class="form-control mb-2" placeholder="ID Producto">
+                        <select id="movTipo" class="form-select mb-2">
+                            <option value="1"> (+)</option>
+                            <option value="0"> (-)</option>
+                        </select>
+                        <input type="number" id="movCant" class="form-control mb-3" placeholder="Cantidad" min="0">
+                        <button class="btn btn-success w-100" onclick="registrarMovimiento()">Aplicar al Kardex</button>
+                    </div>
+                </div>
+            </div>
         </div>
-
     </div>
-
 </div>
 
-<!-- ALERTA -->
+<div class="modal fade" id="modalProducto" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="modalTitulo">Producto</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="prodId">
+                <label>Nombre del Producto</label>
+                <input type="text" id="prodNombre" class="form-control mb-2">
+                <label>Precio Unitario</label>
+                <input type="number" id="prodPrecio" class="form-control mb-2" step="0.01" min="0">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                <button class="btn btn-primary" onclick="guardarProducto()">Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div id="alerta" class="position-fixed top-0 end-0 p-3" style="z-index:9999;"></div>
 
 <script>
+    const URL = "https://api.aprobaos.store";
+    let modalProd = null;
 
-const URL = "https://api.aprobaos.store";
-
-// 🔔 ALERTA BONITA
-function mostrarAlerta(mensaje, tipo="success") {
-    document.getElementById("alerta").innerHTML = `
-        <div class="alert alert-${tipo} alert-dismissible fade show">
-            ${mensaje}
-            <button class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    `;
-}
-
-// 🔐 LOGIN
-function login() {
-
-    const data = {
-        user: document.getElementById("user").value,
-        pass: document.getElementById("pass").value
+    window.onload = () => {
+        modalProd = new bootstrap.Modal(document.getElementById('modalProducto'));
     };
 
-    fetch(URL + "/api/usuarios/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data)
-    })
-    .then(res => res.json())
-    .then(resp => {
 
-        if (resp.codiUsua) {
-            mostrarAlerta("Bienvenido " + resp.logiUsua);
-            document.getElementById("loginDiv").style.display = "none";
-            document.getElementById("app").style.display = "block";
-            listarClientes();
-        } else {
-            mostrarAlerta(resp.mensaje, "danger");
+        // Bloquear teclas negativas y notación científica
+    document.addEventListener("keypress", function(e) {
+        if (e.target.type === 'number') {
+            if (e.key === '-' || e.key === 'e' || e.key === 'E') {
+                e.preventDefault();
+            }
         }
-
     });
-}
 
-// 📋 LISTAR
-function listarClientes() {
+    // Evitar que peguen texto con signo negativo
+    document.addEventListener("paste", function(e) {
+        if (e.target.type === 'number') {
+            const data = e.clipboardData.getData('text');
+            if (data.includes('-')) {
+                e.preventDefault();
+                alert("No se permiten valores negativos");
+            }
+        }
+    });
 
-    fetch(URL + "/api/clientes")
-        .then(res => res.json())
-        .then(data => {
 
-            let html = "";
 
-            data.forEach(c => {
-                html += `
-                    <tr>
-                        <td>${c.codiClie}</td>
-                        <td>${c.ndniClie}</td>
-                        <td>${c.nombClie}</td>
-                        <td>
-                            <button class="btn btn-warning btn-sm" onclick="editar(${c.codiClie})">✏️</button>
-                            <button class="btn btn-danger btn-sm" onclick="eliminar(${c.codiClie})">🗑️</button>
-                        </td>
-                    </tr>
-                `;
-            });
-
-            document.getElementById("tablaClientes").innerHTML = html;
-        });
-}
-
-// 💾 GUARDAR
-function guardarCliente() {
-
-    const id = document.getElementById("codiClie").value;
-
-    const cliente = {
-        ndniClie: document.getElementById("ndni").value,
-        appaClie: document.getElementById("appa").value,
-        apmaClie: document.getElementById("apma").value,
-        nombClie: document.getElementById("nomb").value,
-        fechNaciClie: document.getElementById("fecha").value
-    };
-
-    let metodo = "POST";
-    let url = URL + "/api/clientes";
-
-    if (id) {
-        metodo = "PUT";
-        url += "/" + id;
+    function mostrarAlerta(msg, tipo="success") {
+        document.getElementById("alerta").innerHTML = `<div class="alert alert-${tipo} alert-dismissible fade show shadow">${msg}<button class="btn-close" data-bs-dismiss="alert"></button></div>`;
     }
 
-    fetch(url, {
-        method: metodo,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(cliente)
-    })
-    .then(() => {
-        mostrarAlerta("Guardado correctamente");
-        limpiar();
-        listarClientes();
-    });
-}
-
-// ✏️ EDITAR
-function editar(id) {
-
-    fetch(URL + "/api/clientes/" + id)
-        .then(res => res.json())
-        .then(c => {
-            document.getElementById("codiClie").value = c.codiClie;
-            document.getElementById("ndni").value = c.ndniClie;
-            document.getElementById("appa").value = c.appaClie;
-            document.getElementById("apma").value = c.apmaClie;
-            document.getElementById("nomb").value = c.nombClie;
-            document.getElementById("fecha").value = c.fechNaciClie;
+    // LOGIN
+    function login() {
+        const data = { user: document.getElementById("user").value, pass: document.getElementById("pass").value };
+        fetch(URL + "/api/usuarios/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) })
+        .then(res => res.json()).then(resp => {
+            if (resp.codiUsua) {
+                document.getElementById("loginDiv").style.display = "none";
+                document.getElementById("app").style.display = "block";
+                listarProductos();
+                conectarWebSocket();
+            } else { mostrarAlerta("Error", "danger"); }
         });
+    }
+
+    // --- CRUD PRODUCTO ---
+    async function listarProductos() {
+    const res = await fetch(URL + "/api/inventario/productos");
+    const data = await res.json();
+
+    let html = "";
+    for (const p of data) {
+        // Pedimos el saldo actual al servidor para cada producto
+        const resSaldo = await fetch(`${URL}/api/inventario/productos/saldo/${p.codiProd}`);
+        const saldoActual = await resSaldo.json();
+
+        html += `<tr>
+            <td>${p.codiProd}</td>
+            <td>${p.nombProd}</td>
+            <td>S/. ${p.precProd}</td>
+            <td id="saldo-${p.codiProd}" class="fw-bold text-primary">${saldoActual}</td>
+            <td>
+                <button class="btn btn-warning btn-sm" onclick="editarProducto(${p.codiProd}, '${p.nombProd}', ${p.precProd})">✏️</button>
+                <button class="btn btn-danger btn-sm" onclick="eliminarProducto(${p.codiProd})">🗑️</button>
+            </td>
+        </tr>`;
+    }
+    document.getElementById("tablaProductos").innerHTML = html;
 }
 
-// ❌ ELIMINAR
-function eliminar(id) {
+    function abrirModalProducto() {
+        document.getElementById("prodId").value = "";
+        document.getElementById("prodNombre").value = "";
+        document.getElementById("prodPrecio").value = "";
+        document.getElementById("modalTitulo").innerText = "Nuevo Producto";
+        modalProd.show();
+    }
 
-    if (!confirm("¿Eliminar cliente?")) return;
+    function guardarProducto() {
+    const precio = document.getElementById("prodPrecio").value;
 
-    fetch(URL + "/api/clientes/" + id, {
-        method: "DELETE"
-    })
-    .then(() => {
-        mostrarAlerta("Eliminado correctamente", "warning");
-        listarClientes();
+    if (precio < 0) {
+        mostrarAlerta("El precio no puede ser negativo", "danger");
+        return;
+    }
+    const id = document.getElementById("prodId").value; // Capturamos el ID del input hidden
+
+    const prod = {
+        nombProd: document.getElementById("prodNombre").value,
+        precProd: document.getElementById("prodPrecio").value
+    };
+
+    // SI EL ID EXISTE, LO AGREGAMOS AL OBJETO
+    if (id) {
+        prod.codiProd = parseInt(id);
+    }
+
+    fetch(URL + "/api/inventario/productos", {
+        method: "POST", // El .save() de Spring maneja ambos
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(prod)
+    }).then(() => {
+        listarProductos();
+        modalProd.hide();
+        mostrarAlerta(id ? "Producto actualizado" : "Producto creado");
     });
 }
 
-// 🧹 LIMPIAR
-function limpiar() {
-    document.getElementById("codiClie").value = "";
-    document.getElementById("ndni").value = "";
-    document.getElementById("appa").value = "";
-    document.getElementById("apma").value = "";
-    document.getElementById("nomb").value = "";
-    document.getElementById("fecha").value = "";
+    function editarProducto(id, nombre, precio) {
+        document.getElementById("prodId").value = id;
+        document.getElementById("prodNombre").value = nombre;
+        document.getElementById("prodPrecio").value = precio;
+        document.getElementById("modalTitulo").innerText = "Editar Producto";
+        modalProd.show();
+    }
+
+    function eliminarProducto(id) {
+        if(!confirm("¿Eliminar producto?")) return;
+        // Debes añadir un @DeleteMapping en tu InventarioController para que esto funcione
+        fetch(URL + "/api/inventario/productos/" + id, { method: "DELETE" })
+        .then(() => {
+            listarProductos();
+            mostrarAlerta("Producto eliminado", "warning");
+        });
+    }
+
+    // --- KARDEX & WEBSOCKET ---
+    function conectarWebSocket() {
+        const socket = new SockJS(URL + '/ws-inventario');
+        const stompClient = Stomp.over(socket);
+        stompClient.connect({}, (frame) => {
+            stompClient.subscribe('/topic/saldos', (mensaje) => {
+                const mov = JSON.parse(mensaje.body);
+                const celda = document.getElementById(`saldo-${mov.producto.codiProd}`);
+                if(celda) celda.innerText = mov.saldProd;
+            });
+        });
+    }
+
+    function registrarMovimiento() {
+    const idProd = document.getElementById("movProdId").value;
+    const tipo = document.getElementById("movTipo").value;
+    const cant = parseInt(document.getElementById("movCant").value);
+    const celdaSaldo = document.getElementById(`saldo-${idProd}`);
+    const saldoActual = celdaSaldo ? parseInt(celdaSaldo.innerText) : 0;
+
+    // 1. Validar que la cantidad sea positiva
+    if (cant <= 0) {
+        mostrarAlerta("La cantidad debe ser mayor a 0", "danger");
+        return;
+    }
+
+    // 2. Validar Stock suficiente si es Salida (tipo 0)
+    if (tipo == "0" && cant > saldoActual) {
+        mostrarAlerta("Stock insuficiente para realizar la salida", "danger");
+        return;
+    }
+
+    const mov = {
+        tipoOper: tipo,
+        producto: { codiProd: idProd },
+        cantProd: cant
+    };
+
+    fetch(URL + "/api/inventario/movimiento", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(mov)
+    })
+    .then(() => {
+        mostrarAlerta("Movimiento registrado");
+        document.getElementById("movCant").value = "";
+    });
 }
-
 </script>
-
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-
 </body>
 </html>
